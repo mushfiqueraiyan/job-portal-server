@@ -1,12 +1,39 @@
 const express = require("express");
 require("dotenv").config();
-
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const app = express();
 const port = 3000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://job-portal-bd-client.netlify.app",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
+
+const verifyToken = (req, res, next) => {
+  const token = req?.cookies?.token;
+  console.log("cook in the middleware", token);
+
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized Access" });
+  }
+
+  jwt.verify(token, process.env.JWT_ACCESS_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized Access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
 
 app.get("/", (req, res) => {
   res.send("Hello Job Portal is Cooking");
@@ -59,8 +86,12 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/applications", async (req, res) => {
+    app.get("/applications", verifyToken, async (req, res) => {
       const email = req.query.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
       const query = {
         applicant: email,
       };
@@ -87,6 +118,7 @@ async function run() {
       res.send(result);
     });
 
+    // showing a specific applicant for a specific job
     app.get("/applications/job/:id", async (req, res) => {
       const id = req.params.id;
       const query = {
@@ -109,10 +141,24 @@ async function run() {
       res.send(result);
     });
 
-    // await client.db("admin").command({ ping: 1 });
-    // console.log(
-    //   "Pinged your deployment. You successfully connected to MongoDB!"
-    // );
+    // Generate Json token---------------------------
+
+    app.post("/jwt", async (req, res) => {
+      const userData = req.body;
+      const token = jwt.sign(userData, process.env.JWT_ACCESS_TOKEN, {
+        expiresIn: "1d",
+      });
+
+      // set token in the cookies
+
+      res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "None",
+      });
+
+      res.send({ success: true });
+    });
   } finally {
   }
 }
